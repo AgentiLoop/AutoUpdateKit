@@ -259,47 +259,18 @@ public final class AutoUpdater {
     /// Download → unzip → verify signature → swap bundles → relaunch. Any failure is reported, with
     /// the release page as the fallback, and leaves the installed app untouched.
     private func install(_ release: Release) async {
-        let fm = FileManager.default
         let name = configuration.appName
         let current = Bundle.main.bundleURL
         let progress = ProgressWindow(title: "Downloading \(name) \(release.version)…")
         progress.show()
         defer { progress.close() }
-        var stage: URL?
         do {
-            let folder = current.deletingLastPathComponent()
-            guard fm.isWritableFile(atPath: folder.path) else { throw UpdateError.notWritable(folder.path, app: name) }
-            // Same volume as the app, so the final moves are renames.
-            let dir = try fm.url(for: .itemReplacementDirectory, in: .userDomainMask, appropriateFor: current, create: true)
-            stage = dir
-            let zip = dir.appendingPathComponent("update.zip")
-            let (tmp, _) = try await URLSession.shared.download(for: URLRequest(url: release.zip), delegate: progress)
-            try fm.moveItem(at: tmp, to: zip)
-
-            progress.set(text: "Installing \(name) \(release.version)…", indeterminate: true)
-            let unpacked = dir.appendingPathComponent("unpacked", isDirectory: true)
-            let ditto = Process()
-            ditto.executableURL = URL(fileURLWithPath: "/usr/bin/ditto")
-            ditto.arguments = ["-x", "-k", zip.path, unpacked.path]
-            try ditto.run()
-            ditto.waitUntilExit()
-            guard ditto.terminationStatus == 0 else { throw UpdateError.unzip(ditto.terminationStatus) }
-            guard let app = try fm.contentsOfDirectory(at: unpacked, includingPropertiesForKeys: nil)
-                .first(where: { $0.pathExtension == "app" }) else { throw UpdateError.noApp(name) }
-            try Self.verify(app, requirement: configuration.requirement, appName: name)
-
-            let old = dir.appendingPathComponent("old.app")
-            try fm.moveItem(at: current, to: old)
-            do {
-                try fm.moveItem(at: app, to: current)
-            } catch {
-                try? fm.moveItem(at: old, to: current)
-                throw error
+            try await Self.replace(current, with: release.zip, requirement: configuration.requirement, appName: name,
+                                   delegate: progress) {
+                progress.set(text: "Installing \(name) \(release.version)…", indeterminate: true)
             }
-            try? fm.removeItem(at: dir)
             relaunch(current)
         } catch {
-            if let stage { try? fm.removeItem(at: stage) }
             progress.close()
             if await UpdatePrompt.ask(title: "The update couldn't be installed", message: error.localizedDescription,
                                       buttons: ["OK", "Open Download Page"]) == 1 {
@@ -307,6 +278,44 @@ public final class AutoUpdater {
             }
         }
     }
+
+    /// Downloads the zip at `download`, unpacks it, verifies the app inside against `requirement` and swaps it in
+    /// for the bundle at `current`. Throws (leaving `current` untouched) on any failure. No UI, no relaunch, so
+    /// tests can run the whole pipeline against a stand-in bundle.
+    public static func replace(_ current: URL, with download: URL, requirement: String, appName: String = "the app",
+                               delegate: URLSessionTaskDelegate? = nil, downloaded: () -> Void = {}) async throws {
+        let fm = FileManager.default
+        let folder = current.deletingLastPathComponent()
+        guard fm.isWritableFile(atPath: folder.path) else { throw UpdateError.notWritable(folder.path, app: appName) }
+        // Same volume as the app, so the final moves are renames.
+        let dir = try fm.url(for: .itemReplacementDirectory, in: .userDomainMask, appropriateFor: current, create: true)
+        defer { try? fm.removeItem(at: dir) }
+        let zip = dir.appendingPathComponent("update.zip")
+        let (tmp, _) = try await URLSession.shared.download(for: URLRequest(url: download), delegate: delegate)
+        try fm.moveItem(at: tmp, to: zip)
+        downloaded()
+
+        let unpacked = dir.appendingPathComponent("unpacked", isDirectory: true)
+        let ditto = Process()
+        ditto.executableURL = URL(fileURLWithPath: "/usr/bin/ditto")
+        ditto.arguments = ["-x", "-k", zip.path, unpacked.path]
+        try ditto.run()
+        ditto.waitUntilExit()
+        guard ditto.terminationStatus == 0 else { throw UpdateError.unzip(ditto.terminationStatus) }
+        guard let app = try fm.contentsOfDirectory(at: unpacked, includingPropertiesForKeys: nil)
+            .first(where: { $0.pathExtension == "app" }) else { throw UpdateError.noApp(appName) }
+        try verify(app, requirement: requirement, appName: appName)
+
+        let old = dir.appendingPathComponent("old.app")
+        try fm.moveItem(at: current, to: old)
+        do {
+            try fm.moveItem(at: app, to: current)
+        } catch {
+            try? fm.moveItem(at: old, to: current)
+            throw error
+        }
+    }
+
 
     /// Developer ID signed by the configured team, same bundle identifier, every nested piece intact.
     nonisolated public static func verify(_ app: URL, requirement requirementString: String, appName: String = "the app") throws {

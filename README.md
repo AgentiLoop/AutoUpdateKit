@@ -39,3 +39,9 @@ The installed version defaults to `CFBundleShortVersionString`; pass `installedV
 ## License
 
 PolyForm Noncommercial 1.0.0 — see [LICENSE](LICENSE).
+
+## Testing
+
+`swift test` runs an end-to-end install against the real Agent! releases: a stand-in 1.1.97.297 app is updated to the newest
+release (feed → download → unzip → signature check → swap), and an update signed for another bundle ID must be refused
+with the old app left untouched. Needs network; set `AUTOUPDATEKIT_SKIP_NETWORK=1` to skip.
