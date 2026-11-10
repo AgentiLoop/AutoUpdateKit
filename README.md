@@ -38,7 +38,7 @@ The installed version defaults to `CFBundleShortVersionString`; pass `installedV
 
 ## License
 
-PolyForm Noncommercial 1.0.0 — see [LICENSE](LICENSE).
+MIT — see [LICENSE](LICENSE).
 
 ## Testing
 
