@@ -10,7 +10,7 @@ Extracted from the StarPlayrX Mac updater and used by [Agent!](https://github.co
   and relaunches. Any failure leaves the installed app untouched and offers the release page instead.
 - Pre-releases are only offered when the UserDefaults Bool at `prereleasesKey` is on.
 
-Requires macOS 14, Swift 6. The app must not be sandboxed (it replaces its own bundle) and its folder must be writable.
+Requires macOS 12 or later, Swift 6. The app must not be sandboxed (it replaces its own bundle) and its folder must be writable.
 
 ## Usage
 

@@ -3,7 +3,7 @@ import PackageDescription
 
 let package = Package(
     name: "AutoUpdateKit",
-    platforms: [.macOS(.v14)],
+    platforms: [.macOS(.v12)],
     products: [
         .library(name: "AutoUpdateKit", targets: ["AutoUpdateKit"]),
     ],
